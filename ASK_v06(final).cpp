@@ -17,7 +17,6 @@ HardwareSerial Serial1(D2 ,D8);
 
 // Variable Initialization 
 int32_t Vout = 0;
-const String wave_display[] = {"Sawtooth", "Triangular", "Square"};
 volatile uint8_t sendBit = 0; 
 volatile uint8_t sendByte = 0; 
 volatile uint8_t sendBitIdx = 0; 
