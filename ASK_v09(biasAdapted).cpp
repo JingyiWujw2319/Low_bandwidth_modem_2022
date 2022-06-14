@@ -133,7 +133,7 @@ void demodulation(){
         adcDiff += abs(currentVal-adcValPre);
         adcValPre=currentVal;
         receiveCount+=1;
-        if(receiveCount>=11){
+        if(receiveCount>=8){
             if(adcDiff>4000){
                 receiveByte+=1;
             }
@@ -205,7 +205,7 @@ for (int n = 0; n < WAVEBUFFERLENGTH; n++){
 
     TIM_TypeDef *Instance1 = TIM2;
     HardwareTimer *sampleTimer1 = new HardwareTimer(Instance1);
-    sampleTimer1->setOverflow(3000, HERTZ_FORMAT);
+    sampleTimer1->setOverflow(2180, HERTZ_FORMAT);
     sampleTimer1->attachInterrupt(demodulation);
     sampleTimer1->resume();
 
