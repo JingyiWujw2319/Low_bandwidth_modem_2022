@@ -26,30 +26,31 @@ HardwareSerial Serial1(PC_11 ,PC_10);
 // PC_11 is UART3_RX, PC_10 is UART3_TX (located on left) 
 
 // Variable Initialization 
+
+// DAC variables 
+/// 1: idle
+/// 2: load message
+/// 3: sending 
+/// 4: Interval 
+uint8_t sendStep = 1;
 int32_t Vout = 0;
 volatile uint8_t sendBit = 0; 
 volatile uint8_t sendByte = 0; 
 volatile uint8_t sendBitIdx = 0; 
-uint8_t sendStep = 1;
-/*
-1: idle
-2: load message
-3: sending 
-4: Interval 
-*/
-/// ADC variables
+
+
+// ADC variables
+/// 1: idle 
+/// 2: receiving 
+/// 3: ending (parity in the future)
+volatile uint8_t receiveStep = 1;
 volatile uint16_t adcValPre = 0;
 volatile uint32_t adcDiff =0;
 volatile uint8_t receiveByte = 0;
 volatile uint8_t receiveBitIdx = 0;
-volatile uint8_t receiveStep = 1;
 volatile uint8_t receiveCount =0;
 uint8_t intervalDetected = false; 
-/*
-1: idle 
-2: receiving 
-3: ending (parity in the future)
-*/
+
 
 
 #define WAVEBUFFERLENGTH  60
@@ -60,7 +61,10 @@ int16_t WaveBuffer[WAVEBUFFERLENGTH];
 std::queue<uint8_t> messageBuffer[32];
 std::queue<uint8_t> receiveBuffer[32];
 uint8_t testByte = 0b00000000;
-boolean buttonPressedBefore = false;
+bool buttonPressedBefore = false;
+/// mainMode = true is ASK 
+/// mainMode = false is FSK 
+bool mainMode = true;
 
 
 
@@ -187,9 +191,14 @@ void switchModulationTask(void * pvParameters){
         vTaskDelayUntil( &xLastWakeTime, xFrequency );
         if(digitalRead(userButton)==LOW){
             if(!buttonPressedBefore){
+                mainMode = !mainMode;
                 digitalWrite(userLED,HIGH);
                 buttonPressedBefore = true;
-                Serial2.println("modulation scheme switched");
+                if(mainMode){
+                    Serial2.println("Using Amplitude modulation");
+                }else{
+                    Serial2.println("Using Frequency modulation");
+                }
             }
             // Switch modulation scheme
         }else{
