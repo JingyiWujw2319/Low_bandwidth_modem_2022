@@ -32,12 +32,13 @@ HardwareSerial Serial1(PC_11 ,PC_10);
 /// 2: load message
 /// 3: sending 
 /// 4: Interval 
-volatile uint8_t sendStep = 1;
+uint8_t sendStep = 1;
+int32_t Vout = 0;
 volatile uint8_t sendBit = 0; 
 volatile uint8_t sendByte = 0; 
 volatile uint8_t sendBitIdx = 0; 
 // FSK extra variable
-volatile uint8_t cycle_index = 0;
+uint8_t cycle_index = 0;
 
 // ADC variables
 /// 1: idle 
@@ -52,19 +53,19 @@ volatile uint8_t receiveCount =0;
 // FSK extra variable
 volatile uint8_t prevStamp = 0; 
 
-#define WAVEBUFFERLENGTH  60
+#define WAVEBUFFERLENGTH  50
 #define DACRANGE  230
 #define DACRANGEMID  115
 uint8_t sine_index = 0;
 int16_t WaveBuffer[WAVEBUFFERLENGTH];
-std::queue<uint8_t> messageBuffer[32];
-std::queue<uint8_t> receiveBuffer[32];
+std::queue<uint8_t> messageBuffer[64];
+std::queue<uint8_t> receiveBuffer[64];
 bool buttonPressedBefore = false;
 /// mainMode = true is ASK 
 /// mainMode = false is FSK 
 bool mainMode = true;
 
-
+SemaphoreHandle_t receiveBufferMutex;
 
 void sampleISR(){
     // This function will be called 22000 Hz 
@@ -201,7 +202,9 @@ void readFromPCTask(void * pvParameters){
         vTaskDelayUntil( &xLastWakeTime, xFrequency );
         if(Serial2.available()){
             uint8_t x = Serial2.read();
+            xSemaphoreTake(receiveBufferMutex, portMAX_DELAY);
             receiveBuffer->push(x);
+            xSemaphoreGive(receiveBufferMutex);
         }
     }
 }
@@ -243,9 +246,9 @@ void setup() {
     digitalWrite(DEBUG_rece_win,LOW);
     digitalWrite(DEBUG_send_win,LOW);
     analogReadResolution(12);
-    Serial2.begin(9600);
+    Serial2.begin(1200);
     Serial2.println("Hello!");
-    Serial1.begin(9600);
+    // Serial1.begin(9600);
 
 // Sine wave parameters generation
 for (int n = 0; n < WAVEBUFFERLENGTH; n++){
@@ -257,17 +260,20 @@ for (int n = 0; n < WAVEBUFFERLENGTH; n++){
 // Interupt Setup 
     TIM_TypeDef *Instance = TIM1;
     HardwareTimer *sampleTimer = new HardwareTimer(Instance);
-    sampleTimer->setOverflow(48000, HERTZ_FORMAT);
+    sampleTimer->setOverflow(40000, HERTZ_FORMAT);
     sampleTimer->attachInterrupt(sampleISR);
     sampleTimer->resume();
 
     TIM_TypeDef *Instance1 = TIM2;
     HardwareTimer *sampleTimer1 = new HardwareTimer(Instance1);
-    sampleTimer1->setOverflow(5050, HERTZ_FORMAT);
+    sampleTimer1->setOverflow(5150, HERTZ_FORMAT);
     sampleTimer1->attachInterrupt(demodulation);
     sampleTimer1->resume();
 
 // RTOS implementation
+    // Variable protection 
+    receiveBufferMutex = xSemaphoreCreateMutex();
+    // Creating tasks 
     TaskHandle_t readFromPCHandle = NULL; 
     xTaskCreate(
         readFromPCTask,    /* Function that implements the task */ 
