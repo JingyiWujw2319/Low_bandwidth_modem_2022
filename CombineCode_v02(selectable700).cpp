@@ -37,7 +37,8 @@ int32_t Vout = 0;
 volatile uint8_t sendBit = 0; 
 volatile uint8_t sendByte = 0; 
 volatile uint8_t sendBitIdx = 0; 
-
+// FSK extra variable
+uint8_t cycle_index = 0;
 
 // ADC variables
 /// 1: idle 
@@ -49,9 +50,8 @@ volatile uint32_t adcDiff =0;
 volatile uint8_t receiveByte = 0;
 volatile uint8_t receiveBitIdx = 0;
 volatile uint8_t receiveCount =0;
-uint8_t intervalDetected = false; 
-
-
+// FSK extra variable
+volatile uint8_t prevStamp = 0; 
 
 #define WAVEBUFFERLENGTH  60
 #define DACRANGE  230
@@ -60,7 +60,6 @@ uint8_t sine_index = 0;
 int16_t WaveBuffer[WAVEBUFFERLENGTH];
 std::queue<uint8_t> messageBuffer[32];
 std::queue<uint8_t> receiveBuffer[32];
-uint8_t testByte = 0b00000000;
 bool buttonPressedBefore = false;
 /// mainMode = true is ASK 
 /// mainMode = false is FSK 
@@ -88,20 +87,35 @@ void sampleISR(){
         sendByte=(messageBuffer->front()|0b10000000);
         messageBuffer->pop();
         sendStep = 3;
+        cycle_index = 0;
         sine_index = 0;
         sendBit = bitRead(sendByte,7);
         sendBitIdx = 1;
 
     }else if(sendStep==3){
-        if(sendBit==1){
-            analogWrite(OUTA,DACRANGEMID+WaveBuffer[sine_index]);
+        if(mainMode){
+            if(sendBit==1){
+                analogWrite(OUTA,DACRANGEMID+WaveBuffer[cycle_index]);
+            }else{
+                analogWrite(OUTA,DACRANGEMID);
+            }
         }else{
-            analogWrite(OUTA,DACRANGEMID);
+            analogWrite(OUTA,DACRANGEMID+WaveBuffer[sine_index]);
+            if(sendBit==1){
+                sine_index+=2;
+            }else{
+                sine_index+=1;
+            }
+            if(sine_index>=WAVEBUFFERLENGTH-1 ){
+                sine_index=0;
+            }
         }
-        sine_index+=1;
-        if(sine_index>=WAVEBUFFERLENGTH-1){
+        cycle_index+=1;
+
+        if(cycle_index>=WAVEBUFFERLENGTH-1){
             sendBit = bitRead(sendByte,7-sendBitIdx);
             sine_index=0;
+            cycle_index=0;
             sendBitIdx+=1;
             if(sendBitIdx == 9){
                 sendStep= 4 ;
@@ -124,24 +138,38 @@ void demodulation(){
     // Serial2.println(currentVal);
     if(receiveStep==1){
         if(currentVal>2400){
-            // Serial2.println(currentVal);
-
             digitalWrite(DEBUG_rece_win,HIGH);
             receiveStep=2;
             receiveCount=0;
             receiveBitIdx=0;
             adcValPre = currentVal;
             adcDiff=0;
+            prevStamp = 0; 
             // This is the first sample of the sine 
+            if(mainMode){
+                receiveCount = 0;
+            }else{
+                receiveCount = 1;
+            }
         }
     }else if(receiveStep==2){
-        // receiving 10 samples 
-        adcDiff += abs(currentVal-adcValPre);
-        adcValPre=currentVal;
+        if(mainMode){
+            adcDiff += abs(currentVal-adcValPre);
+            adcValPre=currentVal;
+        }else{
+            if(currentVal<1800){
+                if((receiveCount-prevStamp)<=4 &(receiveCount-prevStamp)>1){
+                    receiveByte+=1;
+                }
+                prevStamp = receiveCount;
+            }
+        }
         receiveCount+=1;
         if(receiveCount>=8){
-            if(adcDiff>4000){
-                receiveByte+=1;
+            if(mainMode){
+                if(adcDiff>4000){
+                    receiveByte+=1;
+                }
             }
             receiveByte=receiveByte<<1;
             receiveBitIdx+=1;
@@ -149,13 +177,10 @@ void demodulation(){
             adcDiff = 0;
             if(receiveBitIdx>=8){
                 // Received 8 bits 
+                prevStamp = 0; 
                 receiveByte=receiveByte>>1;
                 char tempchar = receiveByte;
-                // if(receiveByte==13){
-                //     Serial2.println(" ");
-                // }else{
                 Serial2.print(tempchar);
-                // }
                 receiveByte = 0;
                 digitalWrite(DEBUG_rece_win,LOW);
                 receiveBitIdx=0;
@@ -194,6 +219,7 @@ void switchModulationTask(void * pvParameters){
                 mainMode = !mainMode;
                 digitalWrite(userLED,HIGH);
                 buttonPressedBefore = true;
+                Serial2.println();
                 if(mainMode){
                     Serial2.println("Using Amplitude modulation");
                 }else{
@@ -238,7 +264,7 @@ for (int n = 0; n < WAVEBUFFERLENGTH; n++){
 
     TIM_TypeDef *Instance1 = TIM2;
     HardwareTimer *sampleTimer1 = new HardwareTimer(Instance1);
-    sampleTimer1->setOverflow(4700, HERTZ_FORMAT);
+    sampleTimer1->setOverflow(4600, HERTZ_FORMAT);
     sampleTimer1->attachInterrupt(demodulation);
     sampleTimer1->resume();
 
